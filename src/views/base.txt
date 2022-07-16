@@ -1,0 +1,506 @@
+<script setup>
+import {
+  ElSelect,
+  ElOption,
+  ElButton,
+  ElTooltip,
+  ElLoading,
+} from "element-plus";
+import { ref, reactive, onMounted } from "vue";
+
+import axios from "axios";
+
+let rowOne = reactive([]);
+let rowTwo = reactive([]);
+
+async function getList() {
+  let loading = ElLoading.service({
+    lock: true,
+    text: "加载中",
+    background: "rgba(0, 0, 0, 0.8)",
+  });
+  let data = await axios({
+    method: "post",
+    url: "http://39.170.118.36:8001/api/mingdao/storagePosition",
+    data: {
+      appKey: "e4efec6d23bfe395",
+      sign: "YTdmYjUyMWMwMGY0ZTVlYjEwMDQ5ODgzOTI4YmUxMjQxN2QxMWQyMTE4MWNkYzlkMzNhMGJiZWYxY2Y1NTNhMQ==",
+      worksheetId: "605c1d287a2b4eb1fde6d410",
+      viewId: "605c1d2a7a2b4eb1fde6d4be",
+      pageSize: 999,
+      pageIndex: 1,
+    },
+  });
+  console.log(data);
+  let arr = data.data.data.rows;
+  //不同库区的库位列数
+  //value.value
+  let rowO = optionStatus[value.value].rowOne;
+  let rowT = optionStatus[value.value].rowTwo;
+  let rowOne_ = arr
+    .filter((it) => {
+      return (
+        it.row == rowO &&
+        /^CL/.test(it.positionCode) &&
+        it.story == storyValue.value
+      );
+    })
+    .sort((a, b) => {
+      return a.column - b.column;
+    });
+  let rowTwo_ = arr
+    .filter((it) => {
+      return (
+        it.row == rowT &&
+        /^CL/.test(it.positionCode) &&
+        it.story == storyValue.value
+      );
+    })
+    .sort((a, b) => {
+      return a.column - b.column;
+    });
+
+  rowOne_.forEach((it, idx) => {
+    rowOne.splice(idx, 1, it);
+  });
+  rowTwo_.forEach((it, idx) => {
+    rowTwo.splice(idx, 1, it);
+  });
+  //渲染加载延时设置
+  setTimeout(() => {
+    loading.close();
+  }, 500);
+}
+//会先判断是否启用，没启用的库位（否），将会锁定，更换视图，优先级高于所有状态，直接return跳出
+function checkStatus(sta) {
+  let result = "";
+
+  if (sta.locked === "否") {
+    return "locked";
+  }
+
+  if (sta.positionStatus === "无货") {
+    result = "empty";
+  } else if (sta.positionStatus === "料框占用") {
+    result = "emptyTray";
+  } else if (sta.positionStatus === "有货") {
+    result = "occupy";
+  } else if (sta.positionStatus === "作业中") {
+    result = "working";
+  }
+  return result;
+}
+
+function addEmpty() {
+  let loading = ElLoading.service({
+    lock: true,
+    text: "加载库位中",
+    background: "rgba(0, 0, 0, 0.8)",
+  });
+
+  setTimeout(() => {
+    loading.close();
+  }, 1000);
+
+  storyValue.value = "";
+  // 区位切换，重置框位数为0
+  rowOne.length = 0;
+  rowTwo.length = 0;
+  //注释掉，换区换多一列，不换区从第二格开始
+  // // 根据每个区，生成不同数量的空框位,需要给value-1?
+  rowOne.push(...new Array(optionStatus[value.value].count).fill({}));
+  rowTwo.push(...new Array(optionStatus[value.value].count).fill({}));
+}
+onMounted(() => {
+  // 默认请求第一行
+  addEmpty();
+  getList();
+});
+
+//下拉框
+let options = ref([
+  {
+    value: "0",
+    label: "成品区-长料成品1区",
+  },
+  {
+    value: "1",
+    label: "成品区-长料成品2区",
+  },
+  {
+    value: "2",
+    label: "成品区-短料成品1区",
+  },
+  {
+    value: "3",
+    label: "空料区-长料空框1区",
+  },
+  {
+    value: "4",
+    label: "空料区-短料空框1区",
+  },
+]);
+
+let optionStatus = reactive([
+  {
+    // 长料框C成品一区56排，12行
+    count: 12,
+    rowOne: 5,
+    rowTwo: 6,
+  },
+  {
+    //长料成品2区
+    count: 11,
+    rowOne: 3,
+    rowTwo: 4,
+  },
+  {
+    // 短料成品一区
+    count: 10,
+    rowOne: 9,
+    rowTwo: 10,
+  },
+  {
+    // 长料空框
+    count: 11,
+    rowOne: 1,
+    rowTwo: 2,
+  },
+  {
+    // 短料空框
+    count: 8,
+    rowOne: 7,
+    rowTwo: 8,
+  },
+]);
+
+//默认第一排
+let value = ref("0");
+
+let stories = ref([
+  {
+    value: "1",
+    label: "一层",
+  },
+  {
+    value: "2",
+    label: "二层",
+  },
+]);
+//默认第一列，记得是挂载上去，就会默认先加载一次
+let storyValue = ref("0");
+onMounted(() => {
+  // 默认请求第一行
+  addEmpty();
+  storyValue.value = "1";
+  getList();
+});
+</script>
+
+<template>
+  <div class="main">
+    <!-- 选择库位 -->
+    <div class="selectPart">
+      <!-- 选择器 -->
+      <!-- 选区 -->
+      <el-select v-model="value" placeholder="区域" @change="addEmpty">
+        <el-option
+          v-for="item in options"
+          :key="item.value"
+          :label="item.label"
+          :value="item.value"
+        >
+        </el-option>
+      </el-select>
+      <!-- 选层 -->
+      <el-select
+        class="story"
+        v-model="storyValue"
+        placeholder="层"
+        @change="getList"
+        :disabled="!value"
+      >
+        <el-option
+          v-for="item in stories"
+          :key="item.value"
+          :label="item.label"
+          :value="item.value"
+        >
+        </el-option>
+      </el-select>
+      <!-- 根据是否选区，来判断是否可以刷新 -->
+      <el-button
+        :disabled="!value"
+        class="request"
+        type="primary"
+        @click="getList"
+        plain
+        >刷新</el-button
+      >
+    </div>
+
+    <!-- 库位区 -->
+    <div class="boxesContainer">
+      <div class="columnNo">
+        <div class="rowNumbers box" v-for="(item, idx) in rowOne" :key="idx">
+          {{ idx + 1 }}
+        </div>
+      </div>
+      <div class="rowOne">
+        <div
+          class="box"
+          :class="['box', checkStatus(item)]"
+          v-for="(item, idx) in rowTwo"
+          @click="info"
+          key="idx"
+        >
+          <el-tooltip
+            :content="item.positionCode"
+            v-if="item.positionCode"
+            placement="top"
+            show-after="300"
+          >
+            <el-button
+              style="opacity: 0; margin-left: -1px; width: 50px; height: 100%"
+            ></el-button>
+          </el-tooltip>
+        </div>
+
+        <!-- </el-tooltip> -->
+      </div>
+      <div class="rowTwo">
+        <div
+          class="box"
+          :class="['box', checkStatus(item)]"
+          v-for="(item, idx) in rowOne"
+          @click="info"
+          key="idx"
+        >
+          <!-- 框{{ idx + 1 }} -->
+          <!-- v-if的bug需要修复 -->
+          <!-- show-after修改了鼠标hover上去多久之后出现的时间，默认是0，修改为300，默认为0，频繁触发导致出现黑色方块 -->
+          <el-tooltip
+            :content="item.positionCode"
+            v-if="item.positionCode"
+            placement="bottom"
+            show-after="300"
+          >
+            <el-button
+              style="opacity: 0; width: 50px; height: 100%"
+            ></el-button>
+          </el-tooltip>
+        </div>
+      </div>
+      <div class="wrap">
+        <div class="rowNo">
+          <p>{{ optionStatus[value]?.rowTwo }}</p>
+        </div>
+        <div class="rowNo">
+          <p>{{ optionStatus[value]?.rowOne }}</p>
+        </div>
+      </div>
+    </div>
+    <br />
+
+    <!-- 注释 -->
+    <div class="displayContainer">
+      <div class="displayBox">
+        <div class="empty dBoxes"></div>
+        <p>无货</p>
+      </div>
+
+      <div class="displayBox">
+        <div class="occupy dBoxes"></div>
+        <p>有货</p>
+      </div>
+
+      <div class="displayBox">
+        <div class="emptyTray dBoxes"></div>
+        <p>料框占用</p>
+      </div>
+
+      <div class="displayBox">
+        <div class="working dBoxes"></div>
+        <p>作业中</p>
+      </div>
+
+      
+
+      <div class="displayBox">
+        <div class="locked dBoxes"></div>
+        <p>锁定</p>
+      </div>
+    </div>
+
+    <br />
+  </div>
+</template>
+
+
+<style lang="scss" scoped>
+.main {
+  // border: 1px solid blue;
+  padding: 40px;
+  height: 100px;
+
+  .selectPart {
+    .story {
+      margin-left: 20px;
+    }
+    .request {
+      margin-left: 20px;
+    }
+  }
+
+  .boxesContainer {
+    color: gray;
+    // background-color: rgba(209, 206, 206, 0.938);
+    border: 1.5px solid lightgray;
+    border-radius: 10px;
+    width: 97%;
+    height: 220px;
+    margin-top: 30px;
+    padding: 20px 0 20px 30px;
+    position: relative;
+    .columnNo,
+    .rowOne,
+    .rowTwo {
+      margin-top: 30px;
+      padding: 0 20px 0 20px;
+      // border: 1px solid green;
+      display: flex;
+      flex-direction: row-reverse;
+      justify-content: space-around;
+      // 未渲染
+      .box {
+        width: 50px;
+        height: 50px;
+        border: 1px solid lightgray;
+        border-radius: 10px;
+        // margin: 20px 0 20px 0;
+        // background-image: url(../assets/lary1.jpg);
+        background-size: 100%;
+        background-repeat: no-repeat;
+        font-size: 6%;
+        ::v-deep .el-button {
+          span {
+            display: block;
+            width: 0px;
+          }
+        }
+        &.empty {
+          background-image: url(../assets/empty.svg);
+        }
+        &.emptyTray {
+          background-image: url(../assets/emptyTray.svg);
+        }
+        &.occupy {
+          background-image: url(../assets/occupy.svg);
+        }
+        &.locked {
+          background-image: url(../assets/locked.svg);
+        }
+        &.working {
+          background-image: url(../assets/working.svg);
+        }
+      }
+      .rowNumbers {
+        border: none;
+        text-align: center;
+        height: 20px;
+      }
+    }
+    .columnNo {
+      margin-top: 0px;
+    }
+    .wrap {
+      position: absolute;
+      font-size: 12px;
+      left: 0px;
+      top: 55px;
+      .rowNo {
+        width: 50px;
+        line-height: 50px;
+        text-align: center;
+        margin: 0 0 30px 0;
+      }
+    }
+  }
+  .displayContainer {
+    width: 94%;
+    margin-top: 10px;
+
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+    .displayBox {
+      width: 70px;
+      height: 100px;
+      // border: 2px solid red;
+      text-align: center;
+      left: 50%;
+
+      //3D新增
+      %test {
+        position: absolute;
+        content: "";
+        transition: all 0.5s;
+        transition: all 0.5s;
+      }
+
+      .dBoxes {
+        margin: 40px 0 0 25px;
+
+        width: 70px;
+        height: 70px;
+        background-repeat: no-repeat;
+        background-size: 100%;
+        transform: translate(-50%, -50%);
+        text-decoration: none;
+        font-size: 4vw;
+        transition: all 0.5s;
+        background-color: #3498db;
+
+        //3D新增
+        &::before {
+          @extend %test;
+          bottom: -10px;
+          height: 10px;
+          width: 100%;
+          left: 5px;
+          transform: skewX(45deg);
+          background-color: darken(#3498db, 26%);
+        }
+
+        &::after {
+          @extend %test;
+          right: -10px;
+          height: 100%;
+          width: 10px;
+          bottom: -5px;
+          transform: skewY(45deg);
+          background-color: darken(#3498db, 16%);
+        }
+      }
+      .empty {
+        background-image: url(../assets/empty.svg);
+      }
+      .emptyTray {
+        background-image: url(../assets/emptyTray.svg);
+      }
+      .occupy {
+        background-image: url(../assets/occupy.svg);
+      }
+      .locked {
+        background-image: url(../assets/locked.svg);
+      }
+      .working {
+        background-image: url(../assets/working.svg);
+      }
+    }
+  }
+}
+</style>
+
+
+
